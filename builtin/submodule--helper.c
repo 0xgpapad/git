@@ -2553,6 +2553,11 @@ static int update_clone(int argc, const char **argv, const char *prefix)
 	return update_submodules(&opt);
 }
 
+/*
+ * NEEDSWORK: Use a forward declaration to avoid moving
+ * run_update_procedure() (which will be removed soon).
+ */
+static int update_submodule2(struct update_data *update_data);
 static int run_update_procedure(int argc, const char **argv, const char *prefix)
 {
 	char *prefixed_path, *update = NULL;
@@ -2610,11 +2615,7 @@ static int run_update_procedure(int argc, const char **argv, const char *prefix)
 					    &opt.update_strategy);
 
 	free(prefixed_path);
-
-	if (!oideq(&opt.oid, &opt.suboid) || opt.force)
-		return do_run_update_procedure(&opt);
-
-	return 3;
+	return update_submodule2(&opt);
 }
 
 static int resolve_relative_path(int argc, const char **argv, const char *prefix)
@@ -2976,6 +2977,15 @@ static int module_set_branch(int argc, const char **argv, const char *prefix)
 
 	free(config_name);
 	return !!ret;
+}
+
+/* NEEDSWORK: this is a temporary name until we delete update_submodule() */
+static int update_submodule2(struct update_data *update_data)
+{
+	if (!oideq(&update_data->oid, &update_data->suboid) || update_data->force)
+		return do_run_update_procedure(update_data);
+
+	return 3;
 }
 
 struct add_data {
