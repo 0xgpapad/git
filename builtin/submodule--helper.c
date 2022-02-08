@@ -2517,36 +2517,36 @@ static int update_clone(int argc, const char **argv, const char *prefix)
 {
 	const char *update = NULL;
 	struct pathspec pathspec;
-	struct submodule_update_clone suc = SUBMODULE_UPDATE_CLONE_INIT;
+	struct submodule_update_clone opt = SUBMODULE_UPDATE_CLONE_INIT;
 
 	struct option module_update_clone_options[] = {
 		OPT_STRING(0, "prefix", &prefix,
 			   N_("path"),
 			   N_("path into the working tree")),
-		OPT_STRING(0, "recursive-prefix", &suc.recursive_prefix,
+		OPT_STRING(0, "recursive-prefix", &opt.recursive_prefix,
 			   N_("path"),
 			   N_("path into the working tree, across nested "
 			      "submodule boundaries")),
 		OPT_STRING(0, "update", &update,
 			   N_("string"),
 			   N_("rebase, merge, checkout or none")),
-		OPT_STRING_LIST(0, "reference", &suc.references, N_("repo"),
+		OPT_STRING_LIST(0, "reference", &opt.references, N_("repo"),
 			   N_("reference repository")),
-		OPT_BOOL(0, "dissociate", &suc.dissociate,
+		OPT_BOOL(0, "dissociate", &opt.dissociate,
 			   N_("use --reference only while cloning")),
-		OPT_STRING(0, "depth", &suc.depth, "<depth>",
+		OPT_STRING(0, "depth", &opt.depth, "<depth>",
 			   N_("create a shallow clone truncated to the "
 			      "specified number of revisions")),
-		OPT_INTEGER('j', "jobs", &suc.max_jobs,
+		OPT_INTEGER('j', "jobs", &opt.max_jobs,
 			    N_("parallel jobs")),
-		OPT_BOOL(0, "recommend-shallow", &suc.recommend_shallow,
+		OPT_BOOL(0, "recommend-shallow", &opt.recommend_shallow,
 			    N_("whether the initial clone should follow the shallow recommendation")),
-		OPT__QUIET(&suc.quiet, N_("don't print cloning progress")),
-		OPT_BOOL(0, "progress", &suc.progress,
+		OPT__QUIET(&opt.quiet, N_("don't print cloning progress")),
+		OPT_BOOL(0, "progress", &opt.progress,
 			    N_("force cloning progress")),
-		OPT_BOOL(0, "require-init", &suc.require_init,
+		OPT_BOOL(0, "require-init", &opt.require_init,
 			   N_("disallow cloning into non-empty directory")),
-		OPT_BOOL(0, "single-branch", &suc.single_branch,
+		OPT_BOOL(0, "single-branch", &opt.single_branch,
 			 N_("clone only one branch, HEAD or --branch")),
 		OPT_END()
 	};
@@ -2555,32 +2555,32 @@ static int update_clone(int argc, const char **argv, const char *prefix)
 		N_("git submodule--helper update-clone [--prefix=<path>] [<path>...]"),
 		NULL
 	};
-	suc.prefix = prefix;
+	opt.prefix = prefix;
 
-	update_clone_config_from_gitmodules(&suc.max_jobs);
-	git_config(git_update_clone_config, &suc.max_jobs);
+	update_clone_config_from_gitmodules(&opt.max_jobs);
+	git_config(git_update_clone_config, &opt.max_jobs);
 
 	argc = parse_options(argc, argv, prefix, module_update_clone_options,
 			     git_submodule_helper_usage, 0);
 
 	if (update)
-		if (parse_submodule_update_strategy(update, &suc.update) < 0)
+		if (parse_submodule_update_strategy(update, &opt.update) < 0)
 			die(_("bad value for update parameter"));
 
-	if (module_list_compute(argc, argv, prefix, &pathspec, &suc.list) < 0)
+	if (module_list_compute(argc, argv, prefix, &pathspec, &opt.list) < 0)
 		return 1;
 
 	if (pathspec.nr)
-		suc.warn_if_uninitialized = 1;
+		opt.warn_if_uninitialized = 1;
 
-	return update_submodules(&suc);
+	return update_submodules(&opt);
 }
 
 static int run_update_procedure(int argc, const char **argv, const char *prefix)
 {
 	int force = 0, quiet = 0, nofetch = 0, just_cloned = 0;
 	char *prefixed_path, *update = NULL;
-	struct update_data update_data = UPDATE_DATA_INIT;
+	struct update_data opt = UPDATE_DATA_INIT;
 
 	struct option options[] = {
 		OPT__QUIET(&quiet, N_("suppress output for update by rebase or merge")),
@@ -2589,20 +2589,20 @@ static int run_update_procedure(int argc, const char **argv, const char *prefix)
 			 N_("don't fetch new objects from the remote site")),
 		OPT_BOOL(0, "just-cloned", &just_cloned,
 			 N_("overrides update mode in case the repository is a fresh clone")),
-		OPT_INTEGER(0, "depth", &update_data.depth, N_("depth for shallow fetch")),
+		OPT_INTEGER(0, "depth", &opt.depth, N_("depth for shallow fetch")),
 		OPT_STRING(0, "prefix", &prefix,
 			   N_("path"),
 			   N_("path into the working tree")),
 		OPT_STRING(0, "update", &update,
 			   N_("string"),
 			   N_("rebase, merge, checkout or none")),
-		OPT_STRING(0, "recursive-prefix", &update_data.recursive_prefix, N_("path"),
+		OPT_STRING(0, "recursive-prefix", &opt.recursive_prefix, N_("path"),
 			   N_("path into the working tree, across nested "
 			      "submodule boundaries")),
-		OPT_CALLBACK_F(0, "oid", &update_data.oid, N_("sha1"),
+		OPT_CALLBACK_F(0, "oid", &opt.oid, N_("sha1"),
 			       N_("SHA1 expected by superproject"), PARSE_OPT_NONEG,
 			       parse_opt_object_id),
-		OPT_CALLBACK_F(0, "suboid", &update_data.suboid, N_("subsha1"),
+		OPT_CALLBACK_F(0, "suboid", &opt.suboid, N_("subsha1"),
 			       N_("SHA1 of submodule's HEAD"), PARSE_OPT_NONEG,
 			       parse_opt_object_id),
 		OPT_END()
@@ -2618,27 +2618,27 @@ static int run_update_procedure(int argc, const char **argv, const char *prefix)
 	if (argc != 1)
 		usage_with_options(usage, options);
 
-	update_data.force = !!force;
-	update_data.quiet = !!quiet;
-	update_data.nofetch = !!nofetch;
-	update_data.just_cloned = !!just_cloned;
-	update_data.sm_path = argv[0];
+	opt.force = !!force;
+	opt.quiet = !!quiet;
+	opt.nofetch = !!nofetch;
+	opt.just_cloned = !!just_cloned;
+	opt.sm_path = argv[0];
 
-	if (update_data.recursive_prefix)
-		prefixed_path = xstrfmt("%s%s", update_data.recursive_prefix, update_data.sm_path);
+	if (opt.recursive_prefix)
+		prefixed_path = xstrfmt("%s%s", opt.recursive_prefix, opt.sm_path);
 	else
-		prefixed_path = xstrdup(update_data.sm_path);
+		prefixed_path = xstrdup(opt.sm_path);
 
-	update_data.displaypath = get_submodule_displaypath(prefixed_path, prefix);
+	opt.displaypath = get_submodule_displaypath(prefixed_path, prefix);
 
-	determine_submodule_update_strategy(the_repository, update_data.just_cloned,
-					    update_data.sm_path, update,
-					    &update_data.update_strategy);
+	determine_submodule_update_strategy(the_repository, opt.just_cloned,
+					    opt.sm_path, update,
+					    &opt.update_strategy);
 
 	free(prefixed_path);
 
-	if (!oideq(&update_data.oid, &update_data.suboid) || update_data.force)
-		return do_run_update_procedure(&update_data);
+	if (!oideq(&opt.oid, &opt.suboid) || opt.force)
+		return do_run_update_procedure(&opt);
 
 	return 3;
 }
