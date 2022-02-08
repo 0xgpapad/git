@@ -177,6 +177,24 @@ $content"
 	test_cmp expect actual
     '
 
+    for opt in --buffer --no-buffer
+    do
+	test -z "$content" ||
+		test_expect_success "--batch-command $opt output of $type content is correct" '
+		maybe_remove_timestamp "$batch_output" $no_ts >expect &&
+		maybe_remove_timestamp "$(test_write_lines "contents $sha1" \
+		| git cat-file --batch-command $opt)" $no_ts >actual &&
+		test_cmp expect actual
+	'
+
+	test_expect_success "--batch-command $opt output of $type info is correct" '
+		echo "$sha1 $type $size" >expect &&
+		test_write_lines "info $sha1" \
+		| git cat-file --batch-command $opt >actual &&
+		test_cmp expect actual
+	'
+    done
+
     test_expect_success "custom --batch-check format" '
 	echo "$type $sha1" >expect &&
 	echo $sha1 | git cat-file --batch-check="%(objecttype) %(objectname)" >actual &&
@@ -213,6 +231,70 @@ $content"
     '
 }
 
+run_buffer_test_flush () {
+	type=$1
+	sha1=$2
+	size=$3
+
+	mkfifo input &&
+	test_when_finished 'rm input; exec 8<&-' &&
+	mkfifo output &&
+	exec 9<>output &&
+	test_when_finished 'rm output; exec 9<&-'
+	(
+		# TODO - Ideally we'd pipe the output of cat-file
+		# through "sed s'/$/\\/'" to make sure that that read
+		# would consume all the available
+		# output. Unfortunately we cannot do this as we cannot
+		# control when sed flushes its output. We could write
+		# a test helper in C that appended a '\' to the end of
+		# each line and flushes its output after every line.
+		git cat-file --buffer --batch-command <input 2>err &
+		echo $! &&
+		wait $!
+	) >&9 &
+	sh_pid=$! &&
+	read cat_file_pid <&9 &&
+	test_when_finished "kill $cat_file_pid
+			    kill $sh_pid; wait $sh_pid; :" &&
+	echo "$sha1 $type $size" >expect &&
+	test_write_lines "info $sha1" flush "info $sha1" >input
+	# TODO - consume all available input, not just one
+	# line (see above).
+	read actual <&9 &&
+	echo "$actual" >actual &&
+	test_cmp expect actual &&
+	test_must_be_empty err
+}
+
+run_buffer_test_no_flush () {
+	type=$1
+	sha1=$2
+	size=$3
+
+	touch output &&
+	test_when_finished 'rm output' &&
+	mkfifo input &&
+	test_when_finished 'rm input' &&
+	mkfifo pid &&
+	exec 9<>pid &&
+	test_when_finished 'rm pid; exec 9<&-'
+	(
+		git cat-file --buffer --batch-command <input >output &
+		echo $! &&
+		wait $!
+		echo $?
+	) >&9 &
+	sh_pid=$! &&
+	read cat_file_pid <&9 &&
+	test_when_finished "kill $cat_file_pid
+			    kill $sh_pid; wait $sh_pid; :" &&
+	test_write_lines "info $sha1" "info $sha1" &&
+	kill $cat_file_pid &&
+	read status <&9 &&
+	test_must_be_empty output
+}
+
 hello_content="Hello World"
 hello_size=$(strlen "$hello_content")
 hello_sha1=$(echo_without_newline "$hello_content" | git hash-object --stdin)
@@ -223,6 +305,14 @@ test_expect_success "setup" '
 '
 
 run_tests 'blob' $hello_sha1 $hello_size "$hello_content" "$hello_content"
+
+test_expect_success PIPE '--batch-command --buffer with flush for blob info' '
+       run_buffer_test_flush blob $hello_sha1 $hello_size
+'
+
+test_expect_success PIPE '--batch-command --buffer without flush for blob info' '
+       run_buffer_test_no_flush blob $hello_sha1 $hello_size false
+'
 
 test_expect_success '--batch-check without %(rest) considers whole line' '
 	echo "$hello_sha1 blob $hello_size" >expect &&
@@ -238,6 +328,14 @@ tree_pretty_content="100644 blob $hello_sha1	hello"
 
 run_tests 'tree' $tree_sha1 $tree_size "" "$tree_pretty_content"
 
+test_expect_success PIPE '--batch-command --buffer with flush for tree info' '
+       run_buffer_test_flush tree $tree_sha1 $tree_size
+'
+
+test_expect_success PIPE '--batch-command --buffer without flush for tree info' '
+       run_buffer_test_no_flush tree $tree_sha1 $tree_size false
+'
+
 commit_message="Initial commit"
 commit_sha1=$(echo_without_newline "$commit_message" | git commit-tree $tree_sha1)
 commit_size=$(($(test_oid hexsz) + 137))
@@ -248,6 +346,14 @@ committer $GIT_COMMITTER_NAME <$GIT_COMMITTER_EMAIL> 0000000000 +0000
 $commit_message"
 
 run_tests 'commit' $commit_sha1 $commit_size "$commit_content" "$commit_content" 1
+
+test_expect_success PIPE '--batch-command --buffer with flush for commit info' '
+       run_buffer_test_flush commit $commit_sha1 $commit_size
+'
+
+test_expect_success PIPE '--batch-command --buffer without flush for commit info' '
+       run_buffer_test_no_flush commit $commit_sha1 $commit_size false
+'
 
 tag_header_without_timestamp="object $hello_sha1
 type blob
@@ -263,11 +369,19 @@ tag_size=$(strlen "$tag_content")
 
 run_tests 'tag' $tag_sha1 $tag_size "$tag_content" "$tag_content" 1
 
+test_expect_success PIPE '--batch-command --buffer with flush for tag info' '
+       run_buffer_test_flush tag $tag_sha1 $tag_size
+'
+
+test_expect_success PIPE '--batch-command --buffer without flush for tag info' '
+       run_buffer_test_no_flush tag $tag_sha1 $tag_size false
+'
+
 test_expect_success \
     "Reach a blob from a tag pointing to it" \
     "test '$hello_content' = \"\$(git cat-file blob $tag_sha1)\""
 
-for batch in batch batch-check
+for batch in batch batch-check batch-command
 do
     for opt in t s e p
     do
@@ -371,6 +485,62 @@ deadbeef missing
 test_expect_success "--batch-check with multiple sha1s gives correct format" '
     test "$batch_check_output" = \
     "$(echo_without_newline "$batch_check_input" | git cat-file --batch-check)"
+'
+
+batch_command_info_input="info $hello_sha1
+info $tree_sha1
+info $commit_sha1
+info $tag_sha1
+info deadbeef
+info
+flush
+"
+
+test_expect_success "--batch-command with multiple info calls gives correct format" '
+	test "$batch_check_output" = "$(echo_without_newline \
+	"$batch_command_info_input" | git cat-file --batch-command --buffer)"
+'
+
+batch_command_contents_input="contents $hello_sha1
+contents $commit_sha1
+contents $tag_sha1
+contents deadbeef
+contents
+flush
+"
+
+test_expect_success "--batch-command with multiple contents calls gives correct format" '
+	test "$(maybe_remove_timestamp "$batch_output" 1)" = \
+	"$(maybe_remove_timestamp "$(echo_without_newline "$batch_command_contents_input" | git cat-file --batch-command)" 1)"
+'
+
+batch_command_mixed_input="info $hello_sha1
+contents $hello_sha1
+info $commit_sha1
+contents $commit_sha1
+info $tag_sha1
+contents $tag_sha1
+contents deadbeef
+info
+flush
+"
+
+batch_command_mixed_output="$hello_sha1 blob $hello_size
+$hello_sha1 blob $hello_size
+$hello_content
+$commit_sha1 commit $commit_size
+$commit_sha1 commit $commit_size
+$commit_content
+$tag_sha1 tag $tag_size
+$tag_sha1 tag $tag_size
+$tag_content
+deadbeef missing
+ missing"
+
+test_expect_success "--batch-command with mixed calls gives correct format" '
+	test "$(maybe_remove_timestamp "$batch_command_mixed_output" 1)" = \
+	"$(maybe_remove_timestamp "$(echo_without_newline \
+	"$batch_command_mixed_input" | git cat-file --batch-command --buffer)" 1)"
 '
 
 test_expect_success 'setup blobs which are likely to delta' '
@@ -962,6 +1132,41 @@ test_expect_success 'cat-file --batch-all-objects --batch-check ignores replace'
 	grep ^$orig actual.raw >actual &&
 	echo "$orig commit $orig_size" >expect &&
 	test_cmp expect actual
+'
+test_expect_success 'batch-command empty command' '
+	echo "" >cmd &&
+	test_expect_code 128 git cat-file --batch-command <cmd 2>err &&
+	grep -E "^fatal:.*empty command in input.*" err
+'
+
+test_expect_success 'batch-command whitespace before command' '
+	echo " info deadbeef" >cmd &&
+	test_expect_code 128 git cat-file --batch-command <cmd 2>err &&
+	grep -E "^fatal:.*whitespace before command.*" err
+'
+
+test_expect_success 'batch-command unknown command' '
+	echo unknown_command >cmd &&
+	test_expect_code 128 git cat-file --batch-command <cmd 2>err &&
+	grep -E "^fatal:.*unknown command.*" err
+'
+
+test_expect_success 'batch-command flush with arguments' '
+	echo "flush arg" >cmd &&
+	test_expect_code 128 git cat-file --batch-command --buffer <cmd 2>err &&
+	grep -E "^fatal:.*flush takes no arguments.*" err
+'
+
+test_expect_success 'batch-command flush without --buffer' '
+	echo "flush arg" >cmd &&
+	test_expect_code 128 git cat-file --batch-command <cmd 2>err &&
+	grep -E "^fatal:.*flush is only for --buffer mode.*" err
+'
+
+test_expect_success 'batch-command flush empty queue' '
+	echo flush >cmd &&
+	test_expect_code 0 git cat-file --batch-command --buffer <cmd 2>err &&
+	grep -E "^error:.*nothing to flush.*" err
 '
 
 test_done
