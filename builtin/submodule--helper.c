@@ -1654,7 +1654,10 @@ struct module_clone_data {
 	unsigned int require_init: 1;
 	int single_branch;
 };
-#define MODULE_CLONE_DATA_INIT { .reference = STRING_LIST_INIT_NODUP, .single_branch = -1 }
+#define MODULE_CLONE_DATA_INIT { \
+	.reference = STRING_LIST_INIT_NODUP, \
+	.single_branch = -1, \
+}
 
 struct submodule_alternate_setup {
 	const char *submodule_name;
@@ -2047,7 +2050,9 @@ struct update_data {
 	unsigned int nofetch: 1;
 	unsigned int just_cloned: 1;
 };
-#define UPDATE_DATA_INIT { .update_strategy = SUBMODULE_UPDATE_STRATEGY_INIT }
+#define UPDATE_DATA_INIT { \
+	.update_strategy = SUBMODULE_UPDATE_STRATEGY_INIT, \
+}
 
 static void next_submodule_warn_missing(struct submodule_update_clone *suc,
 		struct strbuf *out, const char *displaypath)
@@ -3013,7 +3018,9 @@ struct add_data {
 	unsigned int progress: 1;
 	unsigned int dissociate: 1;
 };
-#define ADD_DATA_INIT { .depth = -1 }
+#define ADD_DATA_INIT { \
+	.depth = -1, \
+}
 
 static void append_fetch_remotes(struct strbuf *msg, const char *git_dir_path)
 {
